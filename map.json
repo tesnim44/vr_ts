@@ -600,7 +600,7 @@
                 {
                  "height":0,
                  "id":45,
-                 "name":"",
+                 "name":"player",
                  "point":true,
                  "rotation":0,
                  "type":"",
@@ -638,7 +638,7 @@
                  "rotation":0,
                  "type":"",
                  "visible":true,
-                 "width":0,
+                 "width":16,
                  "x":496,
                  "y":16
                 }, 

@@ -22,66 +22,85 @@ k.setBackground(k.Color.fromHex("#311047"));
 
 k.scene("main", async () => {
   const mapData = await (await fetch("./map.json")).json();
-  const layers = mapData.layers;
+  const layers = mapData.layers; 
+  
+  //Create a map Object  
+  const map = k.add([k.sprite("map"), k.pos(0), k.scale(scaleFactor),k.z(0)]);
 
-  const map = k.add([k.sprite("map"), k.pos(0), k.scale(scaleFactor)]);
+  //Create a player Object
+  const player = k.add([
+  k.sprite("spritesheet", { anim: "idle-down" }),
+  k.area({ shape: new k.Rect(k.vec2(0, 3), 15, 15) }),
+  k.body(),
+  k.anchor("center"),
+  k.pos(0, 0),       // spawn will update later
+  k.scale(scaleFactor),
+  {
+    speed: 250,
+    direction: "down",
+    isInDialogue: false,
+  },
+  "player",
+]);
 
-  const player = k.make([
-    k.sprite("spritesheet", { anim: "idle-down" }),
-    k.area({
-      shape: new k.Rect(k.vec2(0, 3), 15, 15),
-    }),
-    k.body(),
-    k.anchor("center"),
-    k.pos(),
-    k.scale(3),
-    {
-      speed: 250,
-      direction: "down",
-      isInDialogue: false,
-    },
-    "player",
-  ]);
+console.log("Player created at", player.pos);
 
-  for (const layer of layers) {
-    if (layer.name === "boundaries") {
-      for (const boundary of layer.objects) {
-        map.add([
-          k.area({
-            shape: new k.Rect(k.vec2(0), boundary.width, boundary.height),
-          }),
-          k.body({ isStatic: true }),
-          k.pos(boundary.x, boundary.y),
-          boundary.name,
-        ]);
 
-        if (boundary.name) {
-          player.onCollide(boundary.name, () => {
-            player.isInDialogue = true;
-            displayDialogue(
-              dialogueData[boundary.name],
-              () => (player.isInDialogue = false)
-            );
-          });
-        }
-      }
 
-      continue;
-    }
 
-    if (layer.name === "spawnpoint") {
-      for (const entity of layer.objects) {
-        if (entity.name === "player") {
+//Fixing player should repoect Boundaries
+for (const layer of layers) {
+  //SpawnPoint Layer
+  if (layer.name === "spawnpoint") {
+      for (const obj of layer.objects) {
+        if (obj.name === "player") {
           player.pos = k.vec2(
-            (map.pos.x + entity.x) * scaleFactor,
-            (map.pos.y + entity.y) * scaleFactor
+            (obj.x) * scaleFactor,
+            (obj.y) * scaleFactor
           );
-          k.add(player);
-          continue;
+          console.log("Player spawned at:", player.pos);
         }
       }
     }
+
+  //Boundaries layer
+
+  if (layer.name === "boundaries") {
+  for (const boundary of layer.objects) {
+    const w = boundary.width || 16;
+    const h = boundary.height || 16;
+    
+    k.add([
+      k.pos(boundary.x * scaleFactor, boundary.y * scaleFactor),
+      k.rect(boundary.width * scaleFactor, boundary.height * scaleFactor),
+      k.color(0,255,0),
+      k.opacity(0.5),
+      k.solid(),
+      "boundary",
+      k.layer("boundaries")
+    ]);
+
+      // Optional: dialogue trigger
+      if (boundary.name) {
+        player.onCollide(boundary.name, () => {
+          player.isInDialogue = true;
+          displayDialogue(dialogueData[boundary.name], 
+            () => (player.isInDialogue = false));
+        });
+      }
+    }
+    continue;
   }
+}
+
+  player.onCollide("boundary", (b) => {
+    console.log("Player collided with boundary at:", b.pos);
+  });
+
+  k.onUpdate(() => {
+    const touching = k.get("boundary").some(b => player.isTouching(b));
+    if (touching) console.log("Player is touching a boundary!");
+  });
 
   setCamScale(k);
 
@@ -90,7 +109,7 @@ k.scene("main", async () => {
   });
 
   k.onUpdate(() => {
-    k.camPos(player.worldPos().x, player.worldPos().y - 100);
+    k.camPos(player.worldPos().x, player.worldPos().y + 100);
   });
 
   k.onMouseDown((mouseBtn) => {
