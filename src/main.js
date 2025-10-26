@@ -2,7 +2,6 @@ import { dialogueData, scaleFactor } from "./constants";
 import { k } from "./kaboomCtx";
 import { displayDialogue, setCamScale } from "./utils";
 
-
 k.loadSprite("spritesheet", "./spritesheet.png", {
   sliceX: 39,
   sliceY: 31,
@@ -17,221 +16,128 @@ k.loadSprite("spritesheet", "./spritesheet.png", {
 });
 
 k.loadSprite("map", "./map.png");
-
 k.setBackground(k.Color.fromHex("#311047"));
 
 k.scene("main", async () => {
   const mapData = await (await fetch("./map.json")).json();
   const layers = mapData.layers;
 
-  const map = k.add([k.sprite("map"), k.pos(0), k.scale(scaleFactor)]);
+  // --- MAP SPRITE ---
+  const map = k.add([
+    k.sprite("map"),
+    k.pos(0, 0),
+    k.scale(scaleFactor),
+    k.z(0),
+  ]);
 
-  const player = k.make([
+  // --- PLAYER ---
+  const player = k.add([
     k.sprite("spritesheet", { anim: "idle-down" }),
-    k.area({
-      shape: new k.Rect(k.vec2(0, 3), 15, 15),
-    }),
-    k.body(),
+    k.area({ shape: new k.Rect(k.vec2(0, 3), 15, 15) }),
+    k.body(), // dynamic physics body
     k.anchor("center"),
-    k.pos(),
-    k.scale(3),
+    k.pos(0, 0),
+    k.scale(scaleFactor),
     {
-      speed: 250,
+      speed: 60,
       direction: "down",
       isInDialogue: false,
     },
     "player",
   ]);
 
-  for (const layer of layers) {
-    if (layer.name === "boundaries") {
-      for (const boundary of layer.objects) {
-        map.add([
-          k.area({
-            shape: new k.Rect(k.vec2(0), boundary.width, boundary.height),
-          }),
-          k.body({ isStatic: true }),
-          k.pos(boundary.x, boundary.y),
-          boundary.name,
-        ]);
+  // --- SPAWN POINT ---
+  const spawnLayer = layers.find((l) => l.name === "spawnpoint");
+  if (spawnLayer) {
+    const spawnObj = spawnLayer.objects.find((o) => o.name === "player");
+    if (spawnObj)
+      player.pos = k.vec2(spawnObj.x * scaleFactor, spawnObj.y * scaleFactor);
+  }
 
-        if (boundary.name) {
-          player.onCollide(boundary.name, () => {
-            player.isInDialogue = true;
-            displayDialogue(
-              dialogueData[boundary.name],
-              () => (player.isInDialogue = false)
-            );
-          });
-        }
-      }
+  // --- BOUNDARIES COLLISION ---
+  const boundaryLayer = layers.find((l) => l.name === "boundaries");
+  if (boundaryLayer) {
+    for (const obj of boundaryLayer.objects) {
+      // detect whether Tiled uses 'class', 'type', or 'name' field
+      const type = obj.class || obj.type || obj.name || "wall";
 
-      continue;
-    }
+      k.add([
+        k.area({
+          shape: new k.Rect(k.vec2(0), obj.width * scaleFactor, obj.height * scaleFactor),
+        }),
+        k.body({ isStatic: true }), // solid object
+        k.pos(obj.x * scaleFactor, obj.y * scaleFactor),
+        k.scale(1),
+        type, // tag = wall / zone / etc
+      ]);
 
-    if (layer.name === "spawnpoint") {
-      for (const entity of layer.objects) {
-        if (entity.name === "player") {
-          player.pos = k.vec2(
-            (map.pos.x + entity.x) * scaleFactor,
-            (map.pos.y + entity.y) * scaleFactor
-          );
-          k.add(player);
-          continue;
-        }
-      }
+      // optional debug visualization (red boxes)
+      // k.add([
+      //   k.rect(obj.width * scaleFactor, obj.height * scaleFactor),
+      //   k.color(k.Color.fromHex("#ff0000")),
+      //   k.opacity(0.2),
+      //   k.pos(obj.x * scaleFactor, obj.y * scaleFactor),
+      //   k.z(100),
+      // ]);
     }
   }
 
-  setCamScale(k);
+  // --- MOVEMENT CONTROL ---
+  k.onKeyDown(() => {
+    if (player.isInDialogue) return;
 
-  k.onResize(() => {
-    setCamScale(k);
-  });
+    let moveX = 0;
+    let moveY = 0;
 
-  k.onUpdate(() => {
-    k.camPos(player.worldPos().x, player.worldPos().y - 100);
-  });
-
-  k.onMouseDown((mouseBtn) => {
-    if (mouseBtn !== "left" || player.isInDialogue) return;
-
-    const worldMousePos = k.toWorld(k.mousePos());
-    player.moveTo(worldMousePos, player.speed);
-
-    const mouseAngle = player.pos.angle(worldMousePos);
-
-    const lowerBound = 50;
-    const upperBound = 125;
-
-    if (
-      mouseAngle > lowerBound &&
-      mouseAngle < upperBound &&
-      player.curAnim() !== "walk-up"
-    ) {
+    if (k.isKeyDown("left")) {
+      player.flipX = true;
+      player.play("walk-side");
+      player.direction = "left";
+      moveX = -player.speed;
+    } else if (k.isKeyDown("right")) {
+      player.flipX = false;
+      player.play("walk-side");
+      player.direction = "right";
+      moveX = player.speed;
+    } else if (k.isKeyDown("up")) {
       player.play("walk-up");
       player.direction = "up";
-      return;
-    }
-
-    if (
-      mouseAngle < -lowerBound &&
-      mouseAngle > -upperBound &&
-      player.curAnim() !== "walk-down"
-    ) {
+      moveY = -player.speed;
+    } else if (k.isKeyDown("down")) {
       player.play("walk-down");
       player.direction = "down";
-      return;
+      moveY = player.speed;
     }
 
-    if (Math.abs(mouseAngle) > upperBound) {
-      player.flipX = false;
-      if (player.curAnim() !== "walk-side") player.play("walk-side");
-      player.direction = "right";
-      return;
-    }
-
-    if (Math.abs(mouseAngle) < lowerBound) {
-      player.flipX = true;
-      if (player.curAnim() !== "walk-side") player.play("walk-side");
-      player.direction = "left";
-      return;
-    }
+    player.move(moveX, moveY);
   });
 
   function stopAnims() {
-    if (player.direction === "down") {
-      player.play("idle-down");
-      return;
-    }
-    if (player.direction === "up") {
-      player.play("idle-up");
-      return;
-    }
-
-    player.play("idle-side");
+    if (player.direction === "down") player.play("idle-down");
+    else if (player.direction === "up") player.play("idle-up");
+    else player.play("idle-side");
   }
 
-  k.onMouseRelease(stopAnims);
+  k.onKeyRelease(stopAnims);
 
-  k.onKeyRelease(() => {
-    stopAnims();
+  // --- COLLISIONS ---
+  player.onCollide("wall", () => {
+    player.stop(); // stop moving when touching wall
   });
-  k.onKeyDown((key) => {
-    const keyMap = [
-      k.isKeyDown("right"),
-      k.isKeyDown("left"),
-      k.isKeyDown("up"),
-      k.isKeyDown("down"),
-    ];
 
-    let nbOfKeyPressed = 0;
-    for (const key of keyMap) {
-      if (key) {
-        nbOfKeyPressed++;
-      }
-    }
-
-    if (nbOfKeyPressed > 1) return;
-
-    if (player.isInDialogue) return;
-    if (keyMap[0]) {
-      player.flipX = false;
-      if (player.curAnim() !== "walk-side") player.play("walk-side");
-      player.direction = "right";
-      player.move(player.speed, 0);
-      return;
-    }
-
-    if (keyMap[1]) {
-      player.flipX = true;
-      if (player.curAnim() !== "walk-side") player.play("walk-side");
-      player.direction = "left";
-      player.move(-player.speed, 0);
-      return;
-    }
-
-    if (keyMap[2]) {
-      if (player.curAnim() !== "walk-up") player.play("walk-up");
-      player.direction = "up";
-      player.move(0, -player.speed);
-      return;
-    }
-
-    if (keyMap[3]) {
-      if (player.curAnim() !== "walk-down") player.play("walk-down");
-      player.direction = "down";
-      player.move(0, player.speed);
-    }
+  player.onCollide("zone", () => {
+    player.stop(); // stop moving when touching zone
   });
+
+  // --- CAMERA + MAP LIMITS ---
+  k.onUpdate(() => {
+    player.pos.x = k.clamp(player.pos.x, 0, map.width * scaleFactor - 16);
+    player.pos.y = k.clamp(player.pos.y, 0, map.height * scaleFactor - 16);
+    k.camPos(player.worldPos().x, player.worldPos().y - 100);
+  });
+
+  setCamScale(k);
+  k.onResize(() => setCamScale(k));
 });
-function create() {
-  const map = this.make.tilemap({ key: 'map' });
-  const tileset = map.addTilesetImage('tilesetName', 'tiles');
-  const ground = map.createLayer('ground', tileset, 0, 0);
-
-  // Get all objects from the layer "stands"
-  const stands = map.getObjectLayer('stands').objects;
-
-  stands.forEach(obj => {
-    // Create an invisible hit zone for each stand
-    const zone = this.add.zone(obj.x, obj.y, obj.width, obj.height);
-    zone.setOrigin(0);
-    this.physics.world.enable(zone);
-    zone.setInteractive();
-
-    // On click
-    zone.on('pointerdown', () => {
-      showCompanyInfo(obj.name, obj.properties);
-    });
-  });
-}
-
-function showCompanyInfo(name, props) {
-  console.log('Company:', name);
-  console.log('Availability:', props.find(p => p.name === 'availability')?.value);
-  console.log('Video:', props.find(p => p.name === 'video')?.value);
-  // You can also open a modal or HTML div overlay with this info
-}
 
 k.go("main");
